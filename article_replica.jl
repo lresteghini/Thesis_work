@@ -20,7 +20,7 @@ limb_form(Operator, rho) = (Operator * rho * adjoint(Operator)) - 0.5 * anticomm
 
 # we construct a vector to hold the values of Γ_load over which we'll run our simulations
 
-n_loads = 375
+n_loads = 115 #249
 load_step = 0.0333
 
 load = zeros(n_loads)
@@ -29,8 +29,22 @@ b = 300
 
 # the following loop fills the vector. It's a very artisanal process as of now
 
-for i in 1:n_loads
-    load[i] = b * exp((i-1) * load_step) - b
+#for i in 1:n_loads
+#    load[i] = b * exp((i-1) * load_step) - b
+#end
+
+load[1] = 0
+
+for i in 1:100
+    load[i+1] = i * 10
+end
+
+for i in 1:9
+    load[i+101] = i * 1000 + 1000
+end
+
+for i in 1:5
+    load[i+110] = 10^(5) * 2 * i
 end
 
 # we also initialize the vectors that we'll later fill with the measurements
@@ -94,7 +108,7 @@ H_ho = omega * a_dagger * a
 # here, we construct the interaction Hamiltonian
 
 g2 = 55
-g3 = 55 
+g3 = 55
 
 I_ho = Matrix(I, D, D)
 
@@ -160,35 +174,48 @@ Limb_ho(rho) = 5.3 * (
             (Population_ho + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
 )
 
-# here, we construc the Lindblad cold transitions. The parameters are still taken from Killoran's article
+# here, we construct the Lindblad cold transitions. The parameters are still taken from Killoran's article
 
 Gamma_cold = 8.07
 Temp_cold = 293
 
 function limb_term(population, op, rev_op, rho)
-    return population * limb_form(rev_op, rho) +
-        (1 + population) * limb_form(op, rho)
+    return (population) * limb_form(rev_op, rho) +
+        (population + 1) * limb_form(op, rho)
 end
 
 populations = Float64[]
 for_trans = Matrix{ComplexF64}[]
 back_trans = Matrix{ComplexF64}[]
 
+ordered_eigen_energy = copy(eigen_energy)
+
+ordered_eigen_energy[1] = eigen_energy[2]
+ordered_eigen_energy[2] = eigen_energy[3]
+ordered_eigen_energy[3] = eigen_energy[4]
+ordered_eigen_energy[4] = eigen_energy[1]
+
+ordered_eigen_basis = copy(eigen_basis)
+
+ordered_eigen_basis[1] = eigen_basis[2]
+ordered_eigen_basis[2] = eigen_basis[3]
+ordered_eigen_basis[3] = eigen_basis[4]
+ordered_eigen_basis[4] = eigen_basis[1]
+
 # here we calculate the populations and the transition operators
 
 for i in 1:n_qbit
-    for j in 1:n_qbit
+    for j in (i + 1):n_qbit
         if i != j
-            energy_diff = abs(eigen_energy[i] - eigen_energy[j])
+            energy_diff = abs(ordered_eigen_energy[i] - ordered_eigen_energy[j])
             if energy_diff > 1e-9
                 ij_population = 1 / (exp(energy_diff / (kb_unit_converter * Temp_cold)) - 1)
             else
                 continue
             end
 
-            Transition_forward = kron(eigen_basis[j] * adjoint(eigen_basis[i]), I_ho, I_ho)
-            Transition_backward = kron(eigen_basis[i] * adjoint(eigen_basis[j]), I_ho, I_ho)
-
+            Transition_forward = kron(ordered_eigen_basis[j] * adjoint(ordered_eigen_basis[i]), I_ho, I_ho)
+            Transition_backward = kron(ordered_eigen_basis[i] * adjoint(ordered_eigen_basis[j]), I_ho, I_ho)
             
             push!(populations, ij_population)
             push!(for_trans, Transition_forward)
@@ -200,6 +227,7 @@ end
 # the Lindblad term is just the sum of all the transition operators and the populations
 
 Limb_cold(rho) = Gamma_cold * sum(limb_term(populations[k], for_trans[k], back_trans[k], rho) for k in 1:length(populations))
+#forward is the relaxation, backwards is the excitation
 
 # here, we construct the Lindblad load term, which is a function of Γ_load 
 
@@ -235,7 +263,7 @@ function steady_state_condition(rho, t, integrator)
     pop_q1_rate = abs(real(tr(drho * P_q1_full)))
     pop_q4_rate = abs(real(tr(drho * P_q4_full)))
 
-    return max(pop_q1_rate, pop_q4_rate) < 1e-1
+    return max(pop_q1_rate, pop_q4_rate) < 1e-4
 end
 
 affect!(integrator) = terminate!(integrator)
@@ -271,7 +299,7 @@ open("latest/VIP_data.csv", "w") do io
     writedlm(io, reshape(csv_header_vip, 1, :), ',')
 end
 
-#start_time = time_ns() for convenience, you can print to console the time it takes for the simulations to complete
+start_time = time_ns() #for convenience, you can print to console the time it takes for the simulations to complete
 
 # this is the main simulation loop. We load the Γ_load, perform the simulation until the stop condition is met, and then calculate
 # currents and voltages, and write them to file
@@ -285,7 +313,7 @@ for index in 1:n_loads
     tspan = (0.0, 2.0)
     prob = ODEProblem(rho_primo, rho0, tspan, p)
     sol = solve(prob, Tsit5(), callback = cb, save_everystep = false, reltol = 1e-8, abstol = 1e-8)
-    rhof = sol[2]
+    rhof = sol[end]
 
     pop_q1 = real(tr(rhof * P_q1_full))
     pop_q4 = real(tr(rhof * P_q4_full))
@@ -309,9 +337,9 @@ for index in 1:n_loads
         writedlm(io, new_data_vip, ',')
     end
 
-    #elapsed_time = (time_ns() - start_time) / 1e9
+    elapsed_time = (time_ns() - start_time) / 1e9
 
-    #print("$(index): gamma $(current_gamma) voltage $(final_voltages[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
+    print("$(index): gamma $(current_gamma) voltage $(final_voltages[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
     
     global rho0 = rhof
     

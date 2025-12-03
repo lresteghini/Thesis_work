@@ -17,26 +17,28 @@ anticommutator(a,b) = a*b + b*a
 
 limb_form(Operator, rho) = (Operator * rho * adjoint(Operator)) - 0.5 * anticommutator(adjoint(Operator) * Operator, rho)
 
-n_temp = 50
-temp_step = 50
+n_omega = 26
+omega_step = 10
 
-temp = zeros(n_temp)
+omegas = zeros(n_omega)
 
-for i in 1:30
-    temp[i] = temp_step * i 
+b = 100 #200 - (n_omega*omega_step/2)
+
+for i in 1:23
+    omegas[i] = b + omega_step * (i-1) 
 end
 
-for i in 1:20
-    temp[i+30] = 1500 + i * 1000
-end
+omegas[24] = 275
+omegas[25] = 279
+omegas[26] = 200 + 55*sqrt(2)
 
 # costruisce un vettore per i valori gamma_load
 # esponenziale fatto abbastanza ad occhio sulla base dei grafici
 # di relazione tra gamma e V
 
-final_currents = zeros(n_temp)
+final_currents = zeros(n_omega)
 
-final_voltages = zeros(n_temp)
+final_voltages = zeros(n_omega)
 
 # inizializza vettori per le misure
 
@@ -76,7 +78,7 @@ I_ho = Matrix(I, D, D)                                 #Per comodità
 
 I_qbit = Matrix(I, n_qbit, n_qbit)
 
-omega = 200                                            #Frequenza dell'oscillatore armonico
+#omega = 200                                            #Frequenza dell'oscillatore armonico
 
 ho_basis = [zeros(ComplexF64, D) for _ in 1:D]         #Base dell'oscillatore legato al qbit 2
 
@@ -96,20 +98,24 @@ end
 
 a_dagger = adjoint(a)                                  #Operatori creazione e distruzione degli oscillatori armonici
 
-H_ho = omega * a_dagger * a                            #Hamiltoniana dell'oscillatore armonico
+################################################################
 
-g2 = 55
-g3 = 55                                                 #Coupling tra oscillatori e qbit
+#H_ho(omega) = omega * a_dagger * a                            #Hamiltoniana dell'oscillatore armonico
 
-H_interaction = kron(qbit_basis[2] * adjoint(qbit_basis[2]), g2 * (a + a_dagger), I_ho) + 
-                kron(qbit_basis[3] * adjoint(qbit_basis[3]), I_ho, g3 * (a + a_dagger))
+#g2 = 55
+#g3 = 55                                                 #Coupling tra oscillatori e qbit
 
-H_tot = kron(H_electronic, I_ho, I_ho) +
-        kron(I_qbit, H_ho, I_ho) +
-        kron(I_qbit, I_ho, H_ho) +
-        H_interaction
+#H_interaction = kron(qbit_basis[2] * adjoint(qbit_basis[2]), g2 * (a + a_dagger), I_ho) + 
+#                kron(qbit_basis[3] * adjoint(qbit_basis[3]), I_ho, g3 * (a + a_dagger))
 
-Hamiltonian(t) = H_tot
+#H_tot = kron(H_electronic, I_ho, I_ho) +
+#        kron(I_qbit, H_ho, I_ho) +
+#        kron(I_qbit, I_ho, H_ho) +
+#        H_interaction
+
+#Hamiltonian(t) = H_tot
+
+###############################################################
 
 
     ## Definisco le transizioni da 1 a 2
@@ -138,14 +144,14 @@ Eccitation_ho3 = kron(I_qbit, I_ho, a_dagger)
 
 Damping_ho3 = kron(I_qbit, I_ho, a)
 
-#Temp_ho = 293
+Temp_ho = 293
 
-Population_ho(temperature_ho) = 1 / (exp(omega/ (kb_unit_converter * temperature_ho)) - 1)
+#Population_ho = 1 / (exp(omega/(kb_unit_converter * Temp_ho)) - 1)
 
-Limb_ho(rho, temperature_ho) = 5.3 * (
-            Population_ho(temperature_ho) * (limb_form(Eccitation_ho2, rho) + limb_form(Eccitation_ho3, rho)) +
-            (Population_ho(temperature_ho) + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
-)
+#Limb_ho(rho) = 5.3 * (
+#            Population_ho * (limb_form(Eccitation_ho2, rho) + limb_form(Eccitation_ho3, rho)) +
+#            (Population_ho + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
+#)
 
 ## Definisco il reservoir freddo 
 
@@ -173,8 +179,6 @@ eigen_energy = copy(E_i)
 
 eigen_energy[2] = adjoint(eigen_basis[2]) * H_electronic * eigen_basis[2]
 eigen_energy[3] = adjoint(eigen_basis[3]) * H_electronic * eigen_basis[3]
-
-# eigen_energy, eigen_basis = eigen(H_electronic)  Lo faccio a mano che costa computazionalmente meno ma sticazzi
 
 ordered_eigen_energy = copy(eigen_energy)
 
@@ -215,38 +219,7 @@ end
 # the Lindblad term is just the sum of all the transition operators and the populations
 
 Limb_cold(rho) = Gamma_cold * sum(limb_term(populations[k], for_trans[k], back_trans[k], rho) for k in 1:length(populations))
-
-#energy_diffs = Float64[]
-#for_trans = [] 
-#back_trans = []
-
-#for i in 1:n_qbit
-#    for j in (i + 1):n_qbit
-#        if i != j
-#            energy_diff = abs(ordered_eigen_energy[i] - ordered_eigen_energy[j])
-            
-            # We store the energy difference to calculate population later
-#            if energy_diff > 1e-9
-#                push!(energy_diffs, energy_diff)
-#            else
-#                continue
-#            end
-
-#            Transition_forward = kron(ordered_eigen_basis[j] * adjoint(ordered_eigen_basis[i]), I_ho, I_ho)
-#            Transition_backward = kron(ordered_eigen_basis[i] * adjoint(ordered_eigen_basis[j]), I_ho, I_ho)
-            
-#            push!(for_trans, Transition_forward)
-#            push!(back_trans, Transition_backward)
-#        end
-#    end
-#end
-
-# Helper function to calculate Bose-Einstein population dynamically
-#get_population(E_diff, T) = 1.0 / (exp(E_diff / (kb_unit_converter * T)) - 1.0)
-
-# The Lindblad term is now a function of rho AND T
-# It computes the specific population for each k on the fly
-#Limb_cold(rho, T) = Gamma_cold * sum(limb_term(get_population(energy_diffs[k], T), for_trans[k], back_trans[k], rho) for k in 1:length(energy_diffs))
+#forward is the relaxation, backwards is the excitation
 
 start_time = time_ns() # per comodità mia, misuro i tempi di calcolo
 
@@ -257,17 +230,20 @@ end
 
 # definisco il temp finale
 
-function Limb_tot(rho, Gamma_load, temperature)
+#function Limb_tot(rho, Gamma_load)
     # sommo tutti i termini di Limblad
-    return Limb_hot(rho) + Limb_ho(rho, temperature) + Limb_load(rho, Gamma_load) + Limb_cold(rho)
-end
+#    return Limb_hot(rho) + Limb_ho(rho) + Limb_load(rho, Gamma_load) + Limb_cold(rho)
+#end
 
-function rho_primo(rho, p, t)
-    Gamma_load = p[1] # è il valore di gamma_load
-    temperature_ho = p[2]
-    H_t = Hamiltonian(t)
-    return 1im * commutator(rho, H_t) + Limb_tot(rho, Gamma_load, temperature_ho)
-end
+#################################################################################################3
+
+#function rho_primo(rho, p, t)
+#    Gamma_load = p[1] # è il valore di gamma_load
+#    H_t = Hamiltonian(t)
+#    return 1im * commutator(rho, H_t) + Limb_tot(rho, Gamma_load,)
+#end
+
+######################################################################################################
 
 # definisco la condizione di stop per la simulazione
 
@@ -312,38 +288,22 @@ rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
 
 
 # File for Voltage, Current, and Power
-csv_header_vip = ["Temperature", "Voltage", "Current", "Power", "AverageNumber2", "AverageNumberA", "AverageNumberS"]
-open("latest_temp_ho/VIP_data.csv", "w") do io
+csv_header_vip = ["omega", "Voltage", "Current", "Power"]
+open("latest_omega_ho/VIP_data.csv", "w") do io
     writedlm(io, reshape(csv_header_vip, 1, :), ',')
 end
 
 # Pre-allocate the power array
-final_powers = zeros(n_temp)
-final_av = zeros(n_temp)
-final_ava = zeros(n_temp)
-final_avs = zeros(n_temp)
-
-a_2 = kron(I_qbit, a, I_ho)
-a_3 = kron(I_qbit, I_ho, a)
-a_dagger_2 = kron(I_qbit, a_dagger, I_ho)
-a_dagger_3 = kron(I_qbit, I_ho, a_dagger)
-
-a_anti = (a_2 - a_3)/sqrt(2)
-a_dagger_anti = adjoint(a_anti)
-
-a_simm = (a_2 + a_3)/sqrt(2)
-a_dagger_simm = adjoint(a_simm)
+final_powers = zeros(n_omega)
+final_av = zeros(n_omega)
 
 N_op_ho = a_dagger * a
-N_op_ho_a = a_dagger_anti * a_anti
-N_op_ho_s = a_dagger_simm * a_simm
-
 N_op_ho2_full = kron(I_qbit, N_op_ho, I_ho)
 N_op_ho3_full = kron(I_qbit, I_ho, N_op_ho)
 
 print("Initialized, starting loop\n")
 
-for index in 1:n_temp
+for index in 1:n_omega
 
     ho_2_state = 2                                           #Eccitazione iniziale ho
 
@@ -359,21 +319,56 @@ for index in 1:n_temp
 
     rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
 
+    current_omega = omegas[index] #carico gamma dal vettore 
+
+    H_ho = current_omega * a_dagger * a                            #Hamiltoniana dell'oscillatore armonico
+
+    g2 = 55
+    g3 = 55                                                 #Coupling tra oscillatori e qbit
+
+    H_interaction = kron(qbit_basis[2] * adjoint(qbit_basis[2]), g2 * (a + a_dagger), I_ho) + 
+                kron(qbit_basis[3] * adjoint(qbit_basis[3]), I_ho, g3 * (a + a_dagger))
+
+    H_tot = kron(H_electronic, I_ho, I_ho) +
+            kron(I_qbit, H_ho, I_ho) +
+            kron(I_qbit, I_ho, H_ho) +
+            H_interaction
+
+    Hamiltonian(t) = H_tot
+
+    Population_ho = 1 / (exp(current_omega/(kb_unit_converter * Temp_ho)) - 1)
+
+    Limb_ho(rho) = 5.3 * (
+                Population_ho * (limb_form(Eccitation_ho2, rho) + limb_form(Eccitation_ho3, rho)) +
+                (Population_ho + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
+    )
+
+    function Limb_tot(rho, Gamma_load)
+        # sommo tutti i termini di Limblad
+        return Limb_hot(rho) + Limb_ho(rho) + Limb_load(rho, Gamma_load) + Limb_cold(rho)
+    end
+
+    function rho_primo(rho, p, t)
+        Gamma_load = p[1] # è il valore di gamma_load
+        H_t = Hamiltonian(t)
+        return 1im * commutator(rho, H_t) + Limb_tot(rho, Gamma_load,)
+    end
+
 #    if index == 1
 #        rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
 #    end
 
 #    non reinizializzo rho0 ad ogni run
 
-    current_t = temp[index] #carico gamma dal vettore 
-    current_gamma = 5                                                                                    #CONSIDER INCREASING IT
+    
+    current_gamma = 5                                                                               #CONSIDER INCREASING IT
 
-    p = (current_gamma, current_t)
+    p = (current_gamma)
 
     tspan = (0.0, 2.0) #tempo massimo di simulazione se non viene fermata prima
     prob = ODEProblem(rho_primo, rho0, tspan, p)
     sol = solve(prob, Tsit5(), callback = cb, save_everystep = false, reltol = 1e-8, abstol = 1e-8)
-    rhof = sol[2] #rho finale (il secondo elemento della soluzione, dato che non salvo step intermedi)
+    rhof = sol[end] #rho finale (il secondo elemento della soluzione, dato che non salvo step intermedi)
 
     pop_q1 = real(tr(rhof * P_q1_full))
     pop_q4 = real(tr(rhof * P_q4_full))
@@ -393,30 +388,18 @@ for index in 1:n_temp
     current_power = final_currents[index] * final_voltages[index]
     final_powers[index] = current_power # Also store it in the main array for the plot
 
-    current_av_ho2 = avg_N_ho2_t = real(tr(rhof * N_op_ho2_full))
-
-    final_av[index] = current_av_ho2
-
-    current_av_hoa = real(tr(rhof * N_op_ho_a))
-    current_av_hos = real(tr(rhof * N_op_ho_s))
-
-    final_ava[index] = current_av_hoa
-    final_avs[index] = current_av_hos
-
-
     # --- 2. Append the latest data to files inside the loop ---
     
     # Append to VIP_data.csv
-    open("latest_temp_ho/VIP_data.csv", "a") do io
+    open("latest_omega_ho/VIP_data.csv", "a") do io
         # Create a 1-row matrix for the new data and append it
-        new_data_vip = [current_t final_voltages[index] final_currents[index] current_power current_av_ho2 current_av_hoa current_av_hos]
+        new_data_vip = [current_omega final_voltages[index] final_currents[index] current_power]
         writedlm(io, new_data_vip, ',')
     end
 
     elapsed_time = (time_ns() - start_time) / 1e9
 
-    print("$(index): temp $(current_t) voltage $(final_voltages[index]) current $(final_currents[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
-    print("    av2 $(current_av_ho2) avs $(current_av_hos) ava $(current_av_hoa) \n")
+    print("$(index): temp $(current_omega) voltage $(final_voltages[index]) current $(final_currents[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
 
 # Giusto per assicurarmi che il programma stia girando senza  problemi
     
@@ -430,21 +413,21 @@ end
 
 # da qui in avanti produco e salvo grafici e salvo dati su file csv 
 
-plot_TI = plot(temp, final_currents,
-                 label="T-I Curve",
-                 xlabel="Temperature (T)",
+plot_omegaI = plot(omegas, final_currents,
+                 label="omega-I Curve",
+                 xlabel="omega",
                  ylabel="Current (I)",
                  legend=:bottomleft)
-title!(plot_TI, "T-I Characteristic")
-plot!(twinx(),  temp, final_powers,
-                 label="T-P curve",
+title!(plot_omegaI, "omega-I Characteristic")
+plot!(twinx(),  omegas, final_powers,
+                 label="omega-P curve",
                  ylabel="Power (P)",
                  legend=:topright,
                  color=:red)
-title!(plot_TI, "Temp vs. Power")
-display(plot_TI) # Uncomment to show the plot
+title!(plot_omegaI, "omega vs. Power")
+display(plot_omegaI) # Uncomment to show the plot
 
-savefig(plot_TI, "latest_temp_ho/tip_plot.png")
+savefig(plot_omegaI, "latest_omega_ho/omegaip_plot.png")
 
 #gamma_voltage_data = hcat(temp, final_voltages)
 

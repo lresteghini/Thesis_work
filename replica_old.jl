@@ -17,26 +17,24 @@ anticommutator(a,b) = a*b + b*a
 
 limb_form(Operator, rho) = (Operator * rho * adjoint(Operator)) - 0.5 * anticommutator(adjoint(Operator) * Operator, rho)
 
-n_temp = 50
-temp_step = 50
+n_loads = 375
+load_step = 0.0333
 
-temp = zeros(n_temp)
+load = zeros(n_loads)
 
-for i in 1:30
-    temp[i] = temp_step * i 
-end
+b = 300
 
-for i in 1:20
-    temp[i+30] = 1500 + i * 1000
+for i in 1:n_loads
+    load[i] = b * exp((i-1) * load_step) - b
 end
 
 # costruisce un vettore per i valori gamma_load
 # esponenziale fatto abbastanza ad occhio sulla base dei grafici
 # di relazione tra gamma e V
 
-final_currents = zeros(n_temp)
+final_currents = zeros(n_loads)
 
-final_voltages = zeros(n_temp)
+final_voltages = zeros(n_loads)
 
 # inizializza vettori per le misure
 
@@ -138,13 +136,13 @@ Eccitation_ho3 = kron(I_qbit, I_ho, a_dagger)
 
 Damping_ho3 = kron(I_qbit, I_ho, a)
 
-#Temp_ho = 293
+Temp_ho = 293
 
-Population_ho(temperature_ho) = 1 / (exp(omega/ (kb_unit_converter * temperature_ho)) - 1)
+Population_ho = 1 / (exp(omega/Temp_ho) - 1)
 
-Limb_ho(rho, temperature_ho) = 5.3 * (
-            Population_ho(temperature_ho) * (limb_form(Eccitation_ho2, rho) + limb_form(Eccitation_ho3, rho)) +
-            (Population_ho(temperature_ho) + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
+Limb_ho(rho) = 5.3 * (
+            Population_ho * (limb_form(Eccitation_ho2, rho) + limb_form(Eccitation_ho3, rho)) +
+            (Population_ho + 1) * (limb_form(Damping_ho2, rho) + limb_form(Damping_ho3, rho))
 )
 
 ## Definisco il reservoir freddo 
@@ -164,46 +162,20 @@ populations = Float64[]
 for_trans = Matrix{ComplexF64}[]
 back_trans = Matrix{ComplexF64}[]
 
-eigen_basis = copy(qbit_basis)
-
-eigen_basis[2] = (qbit_basis[2] + qbit_basis[3])/sqrt(2)  
-eigen_basis[3] = (qbit_basis[2] - qbit_basis[3])/sqrt(2)
-
-eigen_energy = copy(E_i)
-
-eigen_energy[2] = adjoint(eigen_basis[2]) * H_electronic * eigen_basis[2]
-eigen_energy[3] = adjoint(eigen_basis[3]) * H_electronic * eigen_basis[3]
-
-# eigen_energy, eigen_basis = eigen(H_electronic)  Lo faccio a mano che costa computazionalmente meno ma sticazzi
-
-ordered_eigen_energy = copy(eigen_energy)
-
-ordered_eigen_energy[1] = eigen_energy[2]
-ordered_eigen_energy[2] = eigen_energy[3]
-ordered_eigen_energy[3] = eigen_energy[4]
-ordered_eigen_energy[4] = eigen_energy[1]
-
-ordered_eigen_basis = copy(eigen_basis)
-
-ordered_eigen_basis[1] = eigen_basis[2]
-ordered_eigen_basis[2] = eigen_basis[3]
-ordered_eigen_basis[3] = eigen_basis[4]
-ordered_eigen_basis[4] = eigen_basis[1]
-
-# here we calculate the populations and the transition operators
 
 for i in 1:n_qbit
-    for j in (i + 1):n_qbit
+    for j in 1:n_qbit
         if i != j
-            energy_diff = abs(ordered_eigen_energy[i] - ordered_eigen_energy[j])
-            if energy_diff > 1e-9
-                ij_population = 1 / (exp(energy_diff / (kb_unit_converter * Temp_cold)) - 1)
+            energy_diff = abs(E_i[i] - E_i[j])
+            if energy_diff > 1e-9 # controllo di non dividere per 0
+                ij_population = 1 / (exp(energy_diff / Temp_cold) - 1)
             else
                 continue
             end
 
-            Transition_forward = kron(ordered_eigen_basis[j] * adjoint(ordered_eigen_basis[i]), I_ho, I_ho)
-            Transition_backward = kron(ordered_eigen_basis[i] * adjoint(ordered_eigen_basis[j]), I_ho, I_ho)
+            Transition_forward = kron(qbit_basis[j] * adjoint(qbit_basis[i]), I_ho, I_ho)
+            Transition_backward = kron(qbit_basis[i] * adjoint(qbit_basis[j]), I_ho, I_ho)
+
             
             push!(populations, ij_population)
             push!(for_trans, Transition_forward)
@@ -212,41 +184,8 @@ for i in 1:n_qbit
     end
 end
 
-# the Lindblad term is just the sum of all the transition operators and the populations
-
+# Limb_cold è la somma delle transizioni avanti ed indietro tra i vari qbit
 Limb_cold(rho) = Gamma_cold * sum(limb_term(populations[k], for_trans[k], back_trans[k], rho) for k in 1:length(populations))
-
-#energy_diffs = Float64[]
-#for_trans = [] 
-#back_trans = []
-
-#for i in 1:n_qbit
-#    for j in (i + 1):n_qbit
-#        if i != j
-#            energy_diff = abs(ordered_eigen_energy[i] - ordered_eigen_energy[j])
-            
-            # We store the energy difference to calculate population later
-#            if energy_diff > 1e-9
-#                push!(energy_diffs, energy_diff)
-#            else
-#                continue
-#            end
-
-#            Transition_forward = kron(ordered_eigen_basis[j] * adjoint(ordered_eigen_basis[i]), I_ho, I_ho)
-#            Transition_backward = kron(ordered_eigen_basis[i] * adjoint(ordered_eigen_basis[j]), I_ho, I_ho)
-            
-#            push!(for_trans, Transition_forward)
-#            push!(back_trans, Transition_backward)
-#        end
-#    end
-#end
-
-# Helper function to calculate Bose-Einstein population dynamically
-#get_population(E_diff, T) = 1.0 / (exp(E_diff / (kb_unit_converter * T)) - 1.0)
-
-# The Lindblad term is now a function of rho AND T
-# It computes the specific population for each k on the fly
-#Limb_cold(rho, T) = Gamma_cold * sum(limb_term(get_population(energy_diffs[k], T), for_trans[k], back_trans[k], rho) for k in 1:length(energy_diffs))
 
 start_time = time_ns() # per comodità mia, misuro i tempi di calcolo
 
@@ -255,18 +194,17 @@ function Limb_load(rho, Gamma_load)
     return Gamma_load * limb_form(Transition_load, rho)
 end
 
-# definisco il temp finale
+# definisco il load finale
 
-function Limb_tot(rho, Gamma_load, temperature)
+function Limb_tot(rho, Gamma_load)
     # sommo tutti i termini di Limblad
-    return Limb_hot(rho) + Limb_ho(rho, temperature) + Limb_load(rho, Gamma_load) + Limb_cold(rho)
+    return Limb_hot(rho) + Limb_ho(rho) + Limb_load(rho, Gamma_load) + Limb_cold(rho)
 end
 
 function rho_primo(rho, p, t)
     Gamma_load = p[1] # è il valore di gamma_load
-    temperature_ho = p[2]
     H_t = Hamiltonian(t)
-    return 1im * commutator(rho, H_t) + Limb_tot(rho, Gamma_load, temperature_ho)
+    return -1im * commutator(rho, H_t) + Limb_tot(rho, Gamma_load)
 end
 
 # definisco la condizione di stop per la simulazione
@@ -283,7 +221,7 @@ function steady_state_condition(rho, t, integrator)
     pop_q4_rate = abs(real(tr(drho * P_q4_full)))
 
     # controllo se stiano cambiando sufficientemente o no
-    return max(pop_q1_rate, pop_q4_rate) < 1e-4
+    return max(pop_q1_rate, pop_q4_rate) < 1e-1
 end
 
 # dichiaro che se non cambiano abbastanza la simulazione finisce
@@ -310,54 +248,22 @@ rho0_electronic = qbit_basis[excited_qbit] * adjoint(qbit_basis[excited_qbit])  
 
 rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
 
+# File for Gamma vs. Voltage
+csv_header_gv = ["Gamma_load", "Voltage_V"]
+open("latest/gamma_voltage_relationship.csv", "w") do io
+    writedlm(io, reshape(csv_header_gv, 1, :), ',')
+end
 
 # File for Voltage, Current, and Power
-csv_header_vip = ["Temperature", "Voltage", "Current", "Power", "AverageNumber2", "AverageNumberA", "AverageNumberS"]
-open("latest_temp_ho/VIP_data.csv", "w") do io
+csv_header_vip = ["Voltage", "Current", "Power"]
+open("latest/VIP_data.csv", "w") do io
     writedlm(io, reshape(csv_header_vip, 1, :), ',')
 end
 
 # Pre-allocate the power array
-final_powers = zeros(n_temp)
-final_av = zeros(n_temp)
-final_ava = zeros(n_temp)
-final_avs = zeros(n_temp)
+final_powers = zeros(n_loads)
 
-a_2 = kron(I_qbit, a, I_ho)
-a_3 = kron(I_qbit, I_ho, a)
-a_dagger_2 = kron(I_qbit, a_dagger, I_ho)
-a_dagger_3 = kron(I_qbit, I_ho, a_dagger)
-
-a_anti = (a_2 - a_3)/sqrt(2)
-a_dagger_anti = adjoint(a_anti)
-
-a_simm = (a_2 + a_3)/sqrt(2)
-a_dagger_simm = adjoint(a_simm)
-
-N_op_ho = a_dagger * a
-N_op_ho_a = a_dagger_anti * a_anti
-N_op_ho_s = a_dagger_simm * a_simm
-
-N_op_ho2_full = kron(I_qbit, N_op_ho, I_ho)
-N_op_ho3_full = kron(I_qbit, I_ho, N_op_ho)
-
-print("Initialized, starting loop\n")
-
-for index in 1:n_temp
-
-    ho_2_state = 2                                           #Eccitazione iniziale ho
-
-    rho0_ho_2 = ho_basis[ho_2_state] * adjoint(ho_basis[ho_2_state])
-
-    ho_3_state = 2                                           #Eccitazione iniziale ho
-
-    rho0_ho_3 = ho_basis[ho_3_state] * adjoint(ho_basis[ho_3_state])
-
-    excited_qbit = 1                                                      #Qbit eccitato a t=0
-
-    rho0_electronic = qbit_basis[excited_qbit] * adjoint(qbit_basis[excited_qbit])              #Matrice densità elettronica   
-
-    rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
+for index in 1:n_loads
 
 #    if index == 1
 #        rho0 = kron(rho0_electronic, rho0_ho_2, rho0_ho_3)
@@ -365,10 +271,9 @@ for index in 1:n_temp
 
 #    non reinizializzo rho0 ad ogni run
 
-    current_t = temp[index] #carico gamma dal vettore 
-    current_gamma = 5                                                                                    #CONSIDER INCREASING IT
+    current_gamma = load[index] #carico gamma dal vettore 
 
-    p = (current_gamma, current_t)
+    p = (current_gamma,)
 
     tspan = (0.0, 2.0) #tempo massimo di simulazione se non viene fermata prima
     prob = ODEProblem(rho_primo, rho0, tspan, p)
@@ -393,34 +298,30 @@ for index in 1:n_temp
     current_power = final_currents[index] * final_voltages[index]
     final_powers[index] = current_power # Also store it in the main array for the plot
 
-    current_av_ho2 = avg_N_ho2_t = real(tr(rhof * N_op_ho2_full))
-
-    final_av[index] = current_av_ho2
-
-    current_av_hoa = real(tr(rhof * N_op_ho_a))
-    current_av_hos = real(tr(rhof * N_op_ho_s))
-
-    final_ava[index] = current_av_hoa
-    final_avs[index] = current_av_hos
-
-
     # --- 2. Append the latest data to files inside the loop ---
     
-    # Append to VIP_data.csv
-    open("latest_temp_ho/VIP_data.csv", "a") do io
+    # Append to gamma_voltage_relationship.csv
+    open("latest/gamma_voltage_relationship.csv", "a") do io
         # Create a 1-row matrix for the new data and append it
-        new_data_vip = [current_t final_voltages[index] final_currents[index] current_power current_av_ho2 current_av_hoa current_av_hos]
+        new_data_gv = [load[index] final_voltages[index]]
+        writedlm(io, new_data_gv, ',')
+    end
+
+    # Append to VIP_data.csv
+    open("latest/VIP_data.csv", "a") do io
+        # Create a 1-row matrix for the new data and append it
+        new_data_vip = [final_voltages[index] final_currents[index] current_power]
         writedlm(io, new_data_vip, ',')
     end
 
+
     elapsed_time = (time_ns() - start_time) / 1e9
 
-    print("$(index): temp $(current_t) voltage $(final_voltages[index]) current $(final_currents[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
-    print("    av2 $(current_av_ho2) avs $(current_av_hos) ava $(current_av_hoa) \n")
+    print("$(index): gamma $(current_gamma) voltage $(final_voltages[index]) (Elapsed: $(round(elapsed_time, digits=2)) s)\n")
 
 # Giusto per assicurarmi che il programma stia girando senza  problemi
     
-    #global rho0 = rhof
+    global rho0 = rhof
 
 # reinizializzo per la run successiva, così che la simulazione parta vicina all'equilibrio 
     
@@ -430,23 +331,23 @@ end
 
 # da qui in avanti produco e salvo grafici e salvo dati su file csv 
 
-plot_TI = plot(temp, final_currents,
-                 label="T-I Curve",
-                 xlabel="Temperature (T)",
+plot_IV = plot(final_voltages, final_currents,
+                 label="I-V Curve",
+                 xlabel="Voltage (V)",
                  ylabel="Current (I)",
                  legend=:bottomleft)
-title!(plot_TI, "T-I Characteristic")
-plot!(twinx(),  temp, final_powers,
-                 label="T-P curve",
+title!(plot_IV, "I-V Characteristic")
+plot!(twinx(),  final_voltages, final_powers,
+                 label="Power Curve",
                  ylabel="Power (P)",
                  legend=:topright,
                  color=:red)
-title!(plot_TI, "Temp vs. Power")
-display(plot_TI) # Uncomment to show the plot
+title!(plot_IV, "Power vs. Voltage")
+display(plot_IV) # Uncomment to show the plot
 
-savefig(plot_TI, "latest_temp_ho/tip_plot.png")
+savefig(plot_IV, "latest/iv_power_plot.png")
 
-#gamma_voltage_data = hcat(temp, final_voltages)
+#gamma_voltage_data = hcat(load, final_voltages)
 
 
 #csv_header = ["Gamma_load", "Voltage_V"]
